@@ -132,6 +132,42 @@ ensures (sorted result)
 ensures (sorted result /\ permutation_of result input)
 ```
 
+## Kuiper-Specific Spec Review
+
+### Layouts must stay generic
+
+Kernel parameters should not hardcode tensor layouts unless it is an absolute requirement
+(e.g. when using tensor cores). A signature that bakes in a specific layout is not
+reusable and pushes the burden onto every caller.
+
+```fstar
+// WEAK: layout fixed in the signature
+val gemm_tile : matrix_rowmajor -> matrix_rowmajor -> ...
+
+// STRONG: layout is a parameter the caller chooses
+val gemm_tile : {| clayout la |} -> {| clayout lb |} -> ...
+```
+
+### The signature must be usable
+
+- **No trailing implicits.** An implicit (`#x` or `{| ... |}`) in the last position of a
+  signature often cannot be instantiated at the call site. End with an explicit parameter
+  (e.g. a `squash`/unit witness passed as `()`), unless a later explicit argument forces
+  inference.
+- **Spec-only index arguments must be `erased`.** A `nat`/`natlt` parameter used only to
+  compute a ghost layout or spec must be `erased`, with a `{| concrete_sz x |}` instance
+  supplying the runtime value where needed — otherwise extraction fails. This is a spec
+  design decision, not a late extraction fix.
+- **Avoid `erased` of refined types** elsewhere (`erased (natlt z)`); write
+  `n:(erased nat){n < z}` or use `enatlt`, since `erased` is invariant with respect to
+  types and makes typechecking brittle.
+
+### No holes behind the specification
+
+A specification is worthless if the implementation establishes it with `assume pure`,
+`magic()`, or `admit()`. When reviewing, grep for these — a kernel with assumes is not
+verified, and `assume pure` in particular can hide memory safety bugs.
+
 ## Interface Audit Checklist
 
 When reviewing a `.fsti` file:

@@ -1,6 +1,6 @@
 {
   "$schema": "https://json.schemastore.org/claude-code-marketplace.json",
-  "name": "proof-copilot",
+  "name": "kuiper-copilot",
   "version": "0.0.6",
   "description": "F* proof-oriented programming agent and verification skills for Claude Code",
   "owner": {
@@ -9,9 +9,9 @@
   },
   "plugins": [
     {
-      "name": "proof-copilot",
+      "name": "kuiper-copilot",
       "description": "F* proof-oriented programming agent and verification skills for Claude Code",
-      "source": "./plugins/proof-copilot",
+      "source": "./plugins/kuiper-copilot",
       "category": "development"
     }
   ]

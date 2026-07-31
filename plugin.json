@@ -1,11 +1,11 @@
 {
-  "name": "proof-copilot",
+  "name": "kuiper-copilot",
   "description": "F* proof-oriented programming agent and verification skills for GitHub Copilot CLI",
   "version": "0.0.6",
   "author": { "name": "FStarLang" },
   "license": "Apache-2.0",
   "keywords": ["fstar", "verification", "proof", "formal-methods"],
-  "repository": "https://github.com/FStarLang/proof-copilot",
-  "agents": "plugins/proof-copilot/agents/",
-  "skills": "plugins/proof-copilot/skills/"
+  "repository": "https://github.com/FStarLang/kuiper-copilot",
+  "agents": "plugins/kuiper-copilot/agents/",
+  "skills": "plugins/kuiper-copilot/skills/"
 }

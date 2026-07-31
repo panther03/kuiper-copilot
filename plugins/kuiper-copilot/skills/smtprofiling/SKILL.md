@@ -25,11 +25,18 @@ let definition_to_be_debugged ...
 #pop-options
 ```
 
-Run F* on the file (with appropriate include paths)
+Run F* on the file. Use `./fstar.sh` at the root of the repo — this is exactly the case the
+escape hatch exists for, since profiling needs ad-hoc flags that the Makefile targets do
+not pass:
 
 ```bash
 ./fstar.sh Module.fst
+./fstar.sh --print_z3_statistics Module.fst
 ```
+
+`fstar.sh` supplies all the project's required flags (include paths, cache dirs, `--ext`
+extensions, pinned Z3 version) and threads your extra flags through. Once the proof is
+fixed, re-check the module through its Makefile target.
 
 The log messages will show the name of the .smt2 file logged for each proof obligation.
 

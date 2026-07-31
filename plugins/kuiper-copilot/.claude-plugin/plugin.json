@@ -1,11 +1,11 @@
 {
   "$schema": "https://json.schemastore.org/claude-code-plugin-manifest.json",
-  "name": "proof-copilot",
+  "name": "kuiper-copilot",
   "description": "F* proof-oriented programming agent and verification skills for Claude Code",
   "version": "0.0.6",
   "author": { "name": "FStarLang" },
   "license": "Apache-2.0",
   "keywords": ["fstar", "verification", "proof", "formal-methods"],
-  "repository": "https://github.com/FStarLang/proof-copilot",
+  "repository": "https://github.com/FStarLang/kuiper-copilot",
   "agents": ["./agents/fstar-coder.md"]
 }

@@ -1,6 +1,6 @@
 ---
 name: fstarverifier
-description: Verify F* and Pulse code with the repo's ./fstar.sh wrapper and interpret errors
+description: Verify and extract Kuiper F*/Pulse code through the project Makefile, and interpret errors
 tools: Bash, Read
 ---
 
@@ -8,56 +8,67 @@ tools: Bash, Read
 
 This skill is used when:
 - Verifying F* (.fst) or Pulse (`#lang-pulse`) files
+- Extracting a module to CUDA to check the generated code
 - Interpreting F* or Pulse error messages
 - Debugging verification or separation logic failures
 - Managing Pulse resources (fold/unfold, permissions, memory)
 
-## The `./fstar.sh` Wrapper
+## Use the Project Makefile for Everything
 
-Kuiper and Kuiper-based projects require specific flags on every F* invocation
-(include paths, cache/output directories, `--ext` extensions, a pinned Z3 version,
-`--warn_error` settings). The project therefore provides **`fstar.sh` at the root of the
-repository**, and that is what you invoke instead of `fstar.exe`:
+**Do not call `fstar.exe`, `krml`, or `nvcc` directly.** The project Makefile is the source
+of truth for how things are built, and it must keep working for everyone else. A Kuiper
+project's Makefile provides a way to **verify a single file** and to **extract a single
+file**; always use those targets, because they verify and cache the whole dependency tree
+properly. Anything else silently works against a stale or incomplete cache.
+
+Exact target names vary by project — defer to the project's own instructions (README,
+`.github/copilot-instructions.md`, the Makefile itself). Typical shapes:
 
 ```bash
-./fstar.sh Module.fst
+make verify                      # verify everything
+make extract-all                 # verify + extract all modules
+make obj/Kuiper_Foo_Bar.cu       # extract one module (dots become underscores)
+make test                        # build and run tests (needs a GPU)
+make ADMIT=1                     # skip SMT queries while iterating on structure
+make lint                        # project linters
 ```
 
-`fstar.sh` threads every argument you give it straight through to `fstar.exe` on top of
-the flags it adds by default, so **all the F* flags below still work** — just pass them to
-`./fstar.sh`.
+There are exactly two exceptions to going through the Makefile:
 
-Two consequences:
+1. **While iterating, use the F* MCP server** (see the `fstarmcp` skill). It keeps a warm
+   F* process per file and re-checks incrementally, so it is far faster than any batch
+   command for the edit/check loop.
+2. **To check a single file with an ad-hoc flag** (e.g. `--print_z3_statistics`,
+   `--query_stats`, `--error_contexts true`), use **`./fstar.sh` at the root of the repo**.
 
-- **Never call `fstar.exe` directly**, and never hand-assemble include paths or
-  `--already_cached` lists. `fstar.sh` already supplies them, and duplicating or
-  contradicting them produces confusing failures.
-- **`fstar.sh` depends on the project-local F*/Pulse installation** inside the repo. That
-  installation is not version controlled, and how to obtain it varies from project to
-  project — consult the project's own documentation (README, `.github/copilot-instructions.md`,
-  Makefile targets). **Do not attempt to build upstream F*, Pulse, or KaRaMeL yourself.**
+## The `./fstar.sh` Escape Hatch
 
-For interactive, incremental checking, prefer the F* MCP server (see the `fstarmcp`
-skill); it discovers the same configuration and keeps a warm process per file. Use
-`./fstar.sh` for whole-file checks, batch runs, and diagnostic flag experiments.
-
-## Verification Commands
+`fstar.sh` invokes F* with all the project's required flags (include paths, cache/output
+directories, `--ext` extensions, pinned Z3 version, warning policy) and threads every extra
+argument you give it straight through to `fstar.exe`, so **all the F* flags below still
+work** — just pass them to `./fstar.sh`:
 
 ```bash
-# Verify a single file
-./fstar.sh Module.fst
+./fstar.sh --query_stats --split_queries always src/lib/kuiper/Kuiper.Foo.fst
+```
 
-# Extra flags are threaded through to fstar.exe
-./fstar.sh --query_stats --z3rlimit_factor 2 Module.fst
+Never hand-assemble include paths or `--already_cached` lists; `fstar.sh` already supplies
+them, and contradicting them produces confusing failures. Use it for diagnostics only —
+it does not update the dependency tree or the build's caches, so a green `./fstar.sh` run
+is not a substitute for the Makefile target.
 
-# Verify interface first, then implementation (always in this order)
+`fstar.sh` (and its companion `krml.sh`) depend on the **project-local F*/Pulse/KaRaMeL
+installation inside the repo**. That installation is not version controlled, and its
+location and how to obtain it vary from project to project — consult the project's own
+documentation. **Never attempt to build upstream F*, Pulse, or KaRaMeL yourself.**
+
+## Verification Order
+
+```bash
+# ALWAYS verify the interface before the implementation, never both together
 ./fstar.sh Module.fsti
 ./fstar.sh Module.fst
 ```
-
-Whole-project verification goes through the project's build system rather than direct
-invocations, e.g. `make verify` to check everything, or `make ADMIT=1` to skip SMT queries
-while iterating on structure. Check the project's Makefile for the exact target names.
 
 ### Diagnostic Flags
 
@@ -70,11 +81,16 @@ while iterating on structure. Check the project's Makefile for the exact target 
 | `--print_full_names` | Show fully qualified names (catch symbol confusion) |
 | `--print_implicits` | Show implicit arguments (debug unification) |
 | `--detail_errors` | More precise error locations, but can take much longer |
+| `--error_contexts true` | Show which source expression actually caused an error |
 
 ```bash
 # Combined debugging
 ./fstar.sh --query_stats --split_queries always --z3refresh Module.fst
 ```
+
+If F* reports an error pointing at a bizarre location (like `Prims.fst`), re-run with
+`./fstar.sh --error_contexts true path/to/File.fst` to find the source expression that
+actually caused the problem.
 
 ### Resource Limit Options (in-file)
 
@@ -302,22 +318,43 @@ invariant exists* vi v_acc.
 2. Reduce rlimit to 10 — if it fails, the proof needs work
 3. Add explicit intermediate assertions to guide Z3
 
+## Checking the Extracted Output
+
+Extraction is not a final step you defer — it constrains how you write code from the
+start, and attribute mistakes only show up as bad CUDA. Whenever you change extraction
+attributes (`inline_for_extraction`, `noextract`, `erased`, `[@@inline_let]`), re-verify
+the module **and** regenerate the generated source through the Makefile:
+
+```bash
+make obj/Kuiper_Foo_Bar.cu     # module Kuiper.Foo.Bar, dots replaced by underscores
+```
+
+Then read the generated code and confirm the intended result — e.g. that a record or
+index tuple did not materialize as a C `struct`, and that helpers were inlined rather than
+emitted as separate functions. See the agent's extraction guidance for the rules that keep
+generated CUDA flat.
+
 ## Verification Checklist
 
-- [ ] No `admit()` or `assume_` calls
+- [ ] No `admit()`, `magic()`, `assume`, or `assume pure` anywhere
 - [ ] No `drop_` of non-empty resources (Pulse)
 - [ ] Interface (.fsti) verified before implementation (.fst)
 - [ ] All fold/unfold balanced (Pulse)
 - [ ] rlimits ≤ 10 throughout
 - [ ] `--query_stats` shows no cancelled queries
+- [ ] The module verifies through its Makefile target, not just `./fstar.sh`
+- [ ] Generated CUDA regenerated and inspected if extraction attributes changed
 
 ## Additional Resources
 
-- [Proof-oriented Programming in F*](https://github.com/FStarLang/PoP-in-FStar)
+- The project's own documentation (README, `.github/copilot-instructions.md`, Makefile)
+  for build targets, source layout, and project-specific conventions and footguns —
+  this is authoritative over anything here.
 - The project-local F*/Pulse installation in the repo contains the standard library
   (`ulib/`) and the Pulse libraries and tests — grep it for reusable lemmas and examples.
   `./fstar.sh --locate_lib` prints the library root actually in use.
-- The project's own documentation (README, `.github/copilot-instructions.md`, Makefile)
-  for build targets, layout, and project-specific conventions and footguns.
+- The project's own source tree, which carries the core Kuiper library of arrays, refs,
+  barriers, atomics, kernels, and separation-logic combinators.
 - See the `fstarmcp` skill for the interactive incremental checking loop.
 - See the `proofdebugging` skill for systematic debugging workflows.
+- [Proof-oriented Programming in F*](https://github.com/FStarLang/PoP-in-FStar)

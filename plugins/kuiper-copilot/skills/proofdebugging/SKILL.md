@@ -13,6 +13,23 @@ This skill is used when:
 
 ## Debugging Workflow
 
+### Step 0: Read the Error Properly
+
+1. Analyze the F* error message to understand which property actually failed
+2. Trace through the code to find the mismatch between implementation and specification
+3. Adjust either the implementation or the assertions to resolve the discrepancy
+
+If the error points at a nonsensical location (like `Prims.fst`), re-run with
+`--error_contexts true` to find the source expression that really caused it:
+
+```bash
+./fstar.sh --error_contexts true path/to/Module.fst
+```
+
+If the message mentions names like `__y17`, those are escaped unification variables: the
+solver lost context, usually because of a type inference failure upstream. Add explicit
+type annotations at the point where the value is introduced.
+
 ### Step 1: Identify the Failing Query
 
 ```bash
@@ -199,6 +216,13 @@ another module may reference the wrong qualified name.
 
 ## Pulse-Specific Debugging
 
+### Loops
+
+If a loop-related proof fails, **check the loop condition first**: verify the invariant is
+compatible with both the entry and the exit condition. Then simplify incrementally —
+remove non-essential invariants and add them back one at a time until the failure
+reappears.
+
 ### Resource Mismatch
 
 **Symptom:** "Could not prove post-condition" with separation logic.
@@ -208,6 +232,16 @@ another module may reference the wrong qualified name.
 2. Check fold/unfold balance
 3. Verify `rewrite` targets are correct
 4. Ensure no resource was accidentally dropped
+
+### Probing With `assert pure`
+
+Use `assert pure (P)` to probe what the solver actually knows at a program point — a
+failing assertion often reveals the real issue more precisely than the original error.
+
+Never "fix" it by turning the `assert` into an `assume`. `assume pure` is a hole in the
+proof that can hide memory safety bugs, and a kernel with assumes is not verified. The
+same goes for `magic()` and `admit()`: `admit()` is acceptable only as a temporary
+scaffold while validating structure, and must be gone before the change is done.
 
 ### Ghost Context Confusion
 
@@ -241,6 +275,22 @@ another module may reference the wrong qualified name.
 
 ✅ Factor into smaller lemmas with `--z3rlimit 10`
 
+### Assuming Instead of Proving
+
+❌ `assume pure (...)`, `magic()`, or a leftover `admit()`
+
+✅ Restructure the code or add the lemma. A kernel with assumes is not verified.
+
+### Reflexively Adding Lemmas and Asserts
+
+❌ A new lemma whose proof body is just `()` — SMT could already discharge it in context
+
+❌ A wall of intermediate `assert`s "to help Z3" — they pollute the context and can make
+   Z3 *slower*
+
+✅ Search the Kuiper library and the F* standard library first; add an assertion only when
+   you have evidence it is load-bearing
+
 ### Blaming the Tool
 
 ❌ "Pulse can't handle this pattern" (without evidence)
@@ -261,8 +311,16 @@ another module may reference the wrong qualified name.
 
 ## Session Structure for Proof Work
 
-1. **Exploration**: Understand the codebase and existing proofs
+1. **Exploration**: Understand the codebase and existing proofs; search the Kuiper library
+   for lemmas and combinators that already do what you need
 2. **Structure**: Write code with `admit()` placeholders to validate the approach
 3. **Prove**: Remove admits one at a time, starting with the easiest
 4. **Harden**: Reduce rlimits, run with `--z3refresh`, clean up
-5. **Integrate**: Verify in the full build, commit
+5. **Integrate**: Verify through the module's Makefile target, regenerate the extracted
+   CUDA if extraction attributes changed, commit
+
+## Know When to Stop
+
+If a proof seems disproportionately hard, or you are cycling through the same failures
+without progress, stop and ask the user for guidance rather than forcing it. A structural
+change to the implementation is often far cheaper than the proof you are fighting.
