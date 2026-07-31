@@ -16,7 +16,7 @@ This skill is used when:
 ### Step 1: Identify the Failing Query
 
 ```bash
-fstar.exe --query_stats --split_queries always Module.fst 2>&1 | grep -E 'cancelled|failed|succeeded'
+./fstar.sh --query_stats --split_queries always Module.fst 2>&1 | grep -E 'cancelled|failed|succeeded'
 ```
 
 - `--query_stats` shows time and result per query
@@ -191,7 +191,7 @@ val all_in_bounds_preserved : arr:_ -> bound:_ -> i:_ -> Lemma (...)
 
 **Fix:** Use `--print_full_names --print_implicits`:
 ```bash
-fstar.exe --print_full_names --print_implicits Module.fst
+./fstar.sh --print_full_names --print_implicits Module.fst
 ```
 
 Check that each symbol resolves to the intended module. A function copied from

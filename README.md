@@ -2,7 +2,7 @@
 
 Plugins for [F*](https://fstar-lang.org) proof-oriented programming, available for both [GitHub Copilot CLI](https://docs.github.com/copilot/concepts/agents/about-copilot-cli) and [Claude Code](https://claude.ai/code).
 
-The canonical agent and skill files live under `plugins/proof-copilot/` and are shared by both ecosystems. The Copilot CLI plugin reads `plugin.json` at the repo root, which points `agents` and `skills` at `plugins/proof-copilot/agents/` and `plugins/proof-copilot/skills/`. The Claude Code plugin reads `.claude-plugin/marketplace.json` (also at the repo root), which advertises a single plugin sourced from `./plugins/proof-copilot/`; that directory holds `.claude-plugin/plugin.json` plus the same `agents/` and `skills/` subdirectories. The 8 skill files are loaded by both ecosystems verbatim with no duplication.
+The canonical agent and skill files live under `plugins/proof-copilot/` and are shared by both ecosystems. The Copilot CLI plugin reads `plugin.json` at the repo root, which points `agents` and `skills` at `plugins/proof-copilot/agents/` and `plugins/proof-copilot/skills/`. The Claude Code plugin reads `.claude-plugin/marketplace.json` (also at the repo root), which advertises a single plugin sourced from `./plugins/proof-copilot/`; that directory holds `.claude-plugin/plugin.json` plus the same `agents/` and `skills/` subdirectories. The 6 skill files are loaded by both ecosystems verbatim with no duplication.
 
 ## What's Included
 
@@ -10,7 +10,7 @@ The canonical agent and skill files live under `plugins/proof-copilot/` and are 
 
 | Agent | Description |
 |-------|-------------|
-| **fstar-coder** | An expert F* and Pulse programmer that authors formal specifications, implements solutions, and proves correctness — all verified with `fstar.exe`. Handles both pure F* and Pulse (concurrent separation logic) uniformly. |
+| **fstar-coder** | An expert F* and Pulse programmer that authors formal specifications, implements solutions, and proves correctness — all proofs machine-checked. Handles both pure F* and Pulse (concurrent separation logic) uniformly. |
 
 ### Skills
 
@@ -18,18 +18,24 @@ The canonical agent and skill files live under `plugins/proof-copilot/` and are 
 |-------|-------------|
 | **smtprofiling** | Debug F* queries sent to Z3, diagnosing proof instability and performance issues. Includes a catalog of 10 proven stabilization techniques mined from real verification projects. |
 | **proofdebugging** | Systematic workflows for debugging F*/Pulse verification failures — isolating failures, factoring lemmas, and hardening proofs. |
-| **fstarverifier** | Verify F* and Pulse code with `fstar.exe` and interpret common error patterns. |
+| **fstarverifier** | Verify F* and Pulse code with the repo's `./fstar.sh` wrapper and interpret common error patterns. |
 | **specreview** | Review F*/Pulse specifications for completeness, strength, and usability — catch weak postconditions and missing spec-impl connections. |
-| **fstarmcp** | Use the F* MCP server for interactive, incremental typechecking — create a session once, then re-typecheck modified code without restarting F*. |
-| **projectsetup** | Structure a new F*/Pulse verification project with Makefile and directory layout. |
-| **sourcebuild** | Build F*, Pulse, and KaRaMeL from source (fstar2 branch). |
-| **krmlextraction** | Extract verified F*/Pulse code to C via KaRaMeL. |
+| **fstarmcp** | Use the F* MCP server for interactive, incremental typechecking — the preferred tool for the edit/check loop, keeping a warm F* process per file. |
+| **krmlextraction** | Extract verified F*/Pulse code via KaRaMeL using the repo's `./krml.sh` wrapper. |
 
 ## Prerequisites
 
-- **F\*** — The agent can build F* from source using the `sourcebuild` skill (requires `git`, `opam`/OCaml ≥ 4.14, and `Z3`). Alternatively, install a pre-built release from [fstar-lang.org](https://fstar-lang.org). Either way, `fstar.exe` must be on your PATH or configured via `FStar.fst.config.json`.
-- **Z3** — The SMT solver used by F*. The `sourcebuild` skill can install the required versions automatically, or install alongside F* from a release.
-- **Rust/Cargo** (optional) — Required only for building the F* MCP server for incremental typechecking. See the `sourcebuild` and `fstarmcp` skills.
+- **A project-local F*/Pulse/KaRaMeL installation.** Projects are expected to carry their
+  own installation inside the repo. It is not version controlled, and its exact location
+  and how to obtain it vary from project to project — refer to the project's own
+  documentation. Do not build upstream F*, Pulse, or KaRaMeL by hand.
+- **`./fstar.sh` and `./krml.sh` at the repo root.** These wrappers supply the
+  project-specific flags for verification and extraction and delegate to the project-local
+  installation. They thread any additional flags through to `fstar.exe` / `krml`.
+- **`fstar-mcp`** (recommended) — the F* MCP server for interactive incremental
+  typechecking. Look for it in `PATH` first; build it from
+  [FStarLang/fstar-mcp](https://github.com/FStarLang/fstar-mcp) with `cargo build --release`
+  only if it is missing. See the `fstarmcp` skill for registration and usage.
 
 ## Installation
 
@@ -115,7 +121,7 @@ Use the proofdebugging skill to isolate this verification failure
 Future versions will add:
 - smart context retrieval with vector embeddings
 - enhanced spec review with provable tests
-- support for other F*-related tools, EverParse, Kuiper, etc.
+- support for other F*-related tools, e.g. EverParse
 
 ## License
 

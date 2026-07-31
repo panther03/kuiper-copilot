@@ -1,28 +1,52 @@
 ---
 name: krmlextraction
-description: Extract verified F*/Pulse code to C via KaRaMeL (.krml intermediate representation)
+description: Extract verified F*/Pulse code via KaRaMeL using the repo's ./krml.sh wrapper
 tools: Bash, Read
 ---
 
 ## Invocation
 
 This skill is used when:
-- Extracting verified F* or Pulse modules to C code
+- Extracting verified F* or Pulse modules to C/CUDA code
 - Structuring F*/Pulse code so it extracts cleanly
-- Configuring KaRaMeL bundle options to control C output layout
-- Debugging extraction failures or unexpected C output
+- Configuring KaRaMeL bundle options to control output layout
+- Debugging extraction failures or unexpected generated code
+
+## The `./fstar.sh` and `./krml.sh` Wrappers
+
+Kuiper and Kuiper-based projects require specific flags on both halves of the extraction
+pipeline, so the repo root provides two wrappers:
+
+- **`./fstar.sh`** — F* with the project's include paths, cache/output dirs, and `--ext`
+  flags. Use it with `--codegen krml` for phase 1.
+- **`./krml.sh`** — KaRaMeL with the project's default flags (target language, include
+  headers, inlining and codegen options, warning policy). Use it for phase 2.
+
+Both wrappers thread every argument you pass through to `fstar.exe` / `krml` on top of
+their defaults, so **all the flags documented below still work** — just pass them to the
+wrapper. Never invoke `fstar.exe` or `krml` directly, and do not re-specify flags the
+wrappers already provide.
+
+Both wrappers depend on the **project-local F*/Pulse/KaRaMeL installation** inside the
+repo. That installation is not version controlled and how to obtain it varies by project;
+consult the project's own documentation. **Do not attempt to build upstream F*, Pulse, or
+KaRaMeL yourself.**
+
+In practice, whole-project extraction is driven by the build system (e.g. `make
+extract-all`, `make dist`). Invoke the wrappers directly only when extracting or
+debugging a single module.
 
 ## Overview: Two-Phase Pipeline
 
-Extraction from F*/Pulse to C is a two-phase process:
+Extraction is a two-phase process:
 
 1. **F* → .krml**: F* extracts each module to a KaRaMeL intermediate file (`.krml`)
-2. **KaRaMeL → C**: The `krml` tool translates `.krml` files into `.c` and `.h` files
+2. **KaRaMeL → C/CUDA**: `krml` translates `.krml` files into `.c`/`.cu` and `.h` files
 
 ```
- F* source (.fst)          KaRaMeL IR (.krml)           C code (.c/.h)
+ F* source (.fst)          KaRaMeL IR (.krml)         C/CUDA (.c/.cu/.h)
 ┌──────────────┐         ┌──────────────────┐         ┌─────────────────┐
-│ Module.fst   │─codegen─▶│ Module.krml      │─krml───▶│ Module.c        │
+│ Module.fst   │─codegen─▶│ Module.krml      │─krml───▶│ Module.cu       │
 │ Module.fsti  │         │                  │         │ Module.h        │
 └──────────────┘         └──────────────────┘         └─────────────────┘
 ```
@@ -32,16 +56,15 @@ Extraction from F*/Pulse to C is a two-phase process:
 ### Basic Command
 
 ```bash
-fstar.exe --codegen krml --extract_module Module.Name \
-  --odir _output --cache_dir _cache \
-  Module/Name.fst
+./fstar.sh --codegen krml --extract_module Module.Name Module/Name.fst
 ```
 
 Key flags:
 - `--codegen krml` — Produce `.krml` output instead of checking only
 - `--extract_module Module.Name` — Extract exactly one module. This produces `Module_Name.krml`
-- `--odir _output` — Directory for `.krml` output files
-- `--cache_dir _cache` — Directory for `.checked` files from verification
+
+`./fstar.sh` already supplies `--odir`, `--cache_dir`, and the include paths, so do not
+pass them again.
 
 ### Why --extract_module (not --extract)
 
@@ -53,6 +76,8 @@ module per invocation with a correctly-named output file.
 ### Makefile Pattern for Parallel Extraction
 
 ```makefile
+FSTAR = ./fstar.sh
+
 KRML_MODULES = Foo.Bar Foo.Baz Foo.Impl
 
 KRML_FILES = $(patsubst %,$(OUTPUT_DIR)/%.krml,$(subst .,_,$(KRML_MODULES)))
@@ -70,13 +95,11 @@ This lets `make -j` extract modules in parallel.
 
 KaRaMeL needs `.krml` definitions for standard library types it encounters (e.g., tuple
 projections `fst`/`snd` from `FStar.Pervasives.Native`). Without them, polymorphic
-functions like `snd` appear as unresolved calls in the C output.
+functions like `snd` appear as unresolved calls in the generated code.
 
 ```bash
 # Extract a standard library module
-fstar.exe --codegen krml --extract_module FStar.Pervasives.Native \
-  --odir _output --cache_dir _cache \
-  --already_cached Prims,FStar \
+./fstar.sh --codegen krml --extract_module FStar.Pervasives.Native \
   FStar.Pervasives.Native.fst
 ```
 
@@ -88,14 +111,12 @@ KRML_STDLIB_MODULES = FStar.Pervasives.Native
 KRML_STDLIB_FILES = $(patsubst %,$(OUTPUT_DIR)/%.krml,$(subst .,_,$(KRML_STDLIB_MODULES)))
 
 $(KRML_STDLIB_FILES): verify
-	$(FSTAR_EXE) --codegen krml \
+	$(FSTAR) --codegen krml \
 	  --extract_module $(subst _,.,$(notdir $(basename $@))) \
-	  --odir $(OUTPUT_DIR) --cache_dir $(CACHE_DIR) \
-	  --already_cached Prims,FStar \
 	  $(subst _,.,$(notdir $(basename $@))).fst
 ```
 
-Add `$(KRML_STDLIB_FILES)` to the list of `.krml` inputs for the `krml` command.
+Add `$(KRML_STDLIB_FILES)` to the list of `.krml` inputs for the `./krml.sh` command.
 
 ## Structuring Code for Clean Extraction
 
@@ -186,29 +207,32 @@ Either:
 1. Extract the needed stdlib `.krml` (e.g., `FStar.Pervasives.Native.krml`) — see above
 2. Avoid polymorphic calls: destructure tuples with `let (a, b) = pair in ...` instead of `snd pair`
 
-## Phase 2: KaRaMeL .krml to C
+## Phase 2: KaRaMeL .krml to C/CUDA
 
 ### Basic Command
 
 ```bash
-krml \
+./krml.sh \
   -tmpdir _extract \
-  -skip-compilation \
-  -warn-error -2-9-17 \
   -bundle 'Api=Mod1,Mod2,...[rename=OutputName]' \
   -bundle 'FStar.*,Pulse.*,PulseCore.*,Prims' \
   -no-prefix Api.Module \
   input1.krml input2.krml ...
 ```
 
+`./krml.sh` already supplies the project's target-language, header, inlining, and
+warning-policy defaults (for Kuiper these include `-cuda`, `-skip-compilation`,
+`-skip-makefiles`, an early include of the project header, and a `-warn-error` policy).
+Pass only the bundle and output flags specific to what you are extracting.
+
 ### Key Flags
 
 | Flag | Purpose |
 |------|---------|
-| `-tmpdir DIR` | Output directory for generated `.c` and `.h` files |
-| `-skip-compilation` | Generate C only; do not compile or link |
+| `-tmpdir DIR` | Output directory for generated source and header files |
+| `-skip-compilation` | Generate source only; do not compile or link |
 | `-warn-error -W` | Silence warning number W (prefix with `-` to downgrade) |
-| `-bundle SPEC` | Group modules into a single C translation unit (see below) |
+| `-bundle SPEC` | Group modules into a single translation unit (see below) |
 | `-no-prefix M` | Strip module prefix from M's exported function names |
 
 ### Bundle Syntax
@@ -262,9 +286,10 @@ Apply to each API module separately:
 
 ### Warning Suppression: Be Careful
 
-KaRaMeL warnings can indicate real problems — do not suppress them blindly. Run `krml`
-without `-warn-error` first to see what warnings are emitted, then suppress only those
-you understand. Use `-warn-error -W` to downgrade warning W from fatal to non-fatal.
+KaRaMeL warnings can indicate real problems — do not suppress them blindly. The project's
+`./krml.sh` already sets a `-warn-error` policy tuned for the project; before adding your
+own suppression, check what that policy is and understand why a warning fires. Use
+`-warn-error -W` to downgrade warning W from fatal to non-fatal.
 
 Warnings you may need to suppress for Pulse extraction:
 
@@ -287,10 +312,12 @@ Warnings you should **not** suppress without investigation:
 If warnings 11 or 15 fire, the code likely needs restructuring: move the offending
 types/functions behind `Ghost.erased` or into spec-only modules that are bundled away.
 
-## Complete Makefile Template
+## Build Integration
 
-For a full working Makefile that integrates verification, extraction, testing, and
-snapshot management, see the `projectsetup` skill.
+Extraction for the whole project is driven by the build system, not by hand-run commands.
+Look for targets such as `extract-all` (F* → `.krml` → generated sources) and `dist` (copy
+generated sources into the distribution directory), and consult the project's own
+documentation for the authoritative list.
 
 ## Debugging Extraction Issues
 
@@ -301,7 +328,7 @@ snapshot management, see the `projectsetup` skill.
 **Cause**: KaRaMeL couldn't monomorphize a polymorphic stdlib function because the
 corresponding `.krml` file was not provided.
 
-**Fix**: Extract the needed stdlib `.krml` and include it in the `krml` command inputs.
+**Fix**: Extract the needed stdlib `.krml` and include it in the `./krml.sh` command inputs.
 
 ### out.krml instead of Module_Name.krml
 
@@ -328,7 +355,7 @@ multiple modules in one pass.
 
 **Symptom**: C functions have long prefixed names like `Caps_Impl_cap_action_from_key`.
 
-**Fix**: Add `-no-prefix Caps.Impl` to the `krml` command.
+**Fix**: Add `-no-prefix Caps.Impl` to the `./krml.sh` command.
 
 ### Type mismatches after extraction
 
@@ -343,5 +370,8 @@ spec-only modules.
 ## Additional Resources
 
 - [KaRaMeL README](https://github.com/FStarLang/karamel)
-- `krml --help` for full flag reference
+- `./krml.sh --help` for the full flag reference
+- The project's own documentation (README, `.github/copilot-instructions.md`, Makefile)
+  for build targets, source layout, and extraction footguns specific to the project
+- See the `fstarverifier` skill for verification with `./fstar.sh`
 - [F* tutorial on extraction](https://fstar-lang.org/tutorial/)

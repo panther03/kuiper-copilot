@@ -1,6 +1,6 @@
 ---
 name: fstarverifier
-description: Verify F* and Pulse code with fstar.exe and interpret errors
+description: Verify F* and Pulse code with the repo's ./fstar.sh wrapper and interpret errors
 tools: Bash, Read
 ---
 
@@ -12,22 +12,52 @@ This skill is used when:
 - Debugging verification or separation logic failures
 - Managing Pulse resources (fold/unfold, permissions, memory)
 
+## The `./fstar.sh` Wrapper
+
+Kuiper and Kuiper-based projects require specific flags on every F* invocation
+(include paths, cache/output directories, `--ext` extensions, a pinned Z3 version,
+`--warn_error` settings). The project therefore provides **`fstar.sh` at the root of the
+repository**, and that is what you invoke instead of `fstar.exe`:
+
+```bash
+./fstar.sh Module.fst
+```
+
+`fstar.sh` threads every argument you give it straight through to `fstar.exe` on top of
+the flags it adds by default, so **all the F* flags below still work** — just pass them to
+`./fstar.sh`.
+
+Two consequences:
+
+- **Never call `fstar.exe` directly**, and never hand-assemble include paths or
+  `--already_cached` lists. `fstar.sh` already supplies them, and duplicating or
+  contradicting them produces confusing failures.
+- **`fstar.sh` depends on the project-local F*/Pulse installation** inside the repo. That
+  installation is not version controlled, and how to obtain it varies from project to
+  project — consult the project's own documentation (README, `.github/copilot-instructions.md`,
+  Makefile targets). **Do not attempt to build upstream F*, Pulse, or KaRaMeL yourself.**
+
+For interactive, incremental checking, prefer the F* MCP server (see the `fstarmcp`
+skill); it discovers the same configuration and keeps a warm process per file. Use
+`./fstar.sh` for whole-file checks, batch runs, and diagnostic flag experiments.
+
 ## Verification Commands
 
 ```bash
-# Verify a single file (stage3 fstar.exe includes Pulse support)
-fstar.exe Module.fst
+# Verify a single file
+./fstar.sh Module.fst
 
-# With project include paths and caching
-fstar.exe --cache_checked_modules --cache_dir _cache \
-  --already_cached Prims,FStar,Pulse.Nolib,Pulse.Lib,Pulse.Class,PulseCore \
-  --include path/to/spec --include path/to/impl \
-  Module.fst
+# Extra flags are threaded through to fstar.exe
+./fstar.sh --query_stats --z3rlimit_factor 2 Module.fst
 
 # Verify interface first, then implementation (always in this order)
-fstar.exe Module.fsti
-fstar.exe Module.fst
+./fstar.sh Module.fsti
+./fstar.sh Module.fst
 ```
+
+Whole-project verification goes through the project's build system rather than direct
+invocations, e.g. `make verify` to check everything, or `make ADMIT=1` to skip SMT queries
+while iterating on structure. Check the project's Makefile for the exact target names.
 
 ### Diagnostic Flags
 
@@ -43,7 +73,7 @@ fstar.exe Module.fst
 
 ```bash
 # Combined debugging
-fstar.exe --query_stats --split_queries always --z3refresh Module.fst
+./fstar.sh --query_stats --split_queries always --z3refresh Module.fst
 ```
 
 ### Resource Limit Options (in-file)
@@ -284,7 +314,10 @@ invariant exists* vi v_acc.
 ## Additional Resources
 
 - [Proof-oriented Programming in F*](https://github.com/FStarLang/PoP-in-FStar)
-- `FSTAR_HOME/ulib/` — F* standard library sources
-- `FSTAR_HOME/pulse/test/` — Pulse test cases and examples
-- `FSTAR_HOME/pulse/lib/pulse/lib/` — Pulse library sources
-- See the `proofdebugging` skill for systematic debugging workflows
+- The project-local F*/Pulse installation in the repo contains the standard library
+  (`ulib/`) and the Pulse libraries and tests — grep it for reusable lemmas and examples.
+  `./fstar.sh --locate_lib` prints the library root actually in use.
+- The project's own documentation (README, `.github/copilot-instructions.md`, Makefile)
+  for build targets, layout, and project-specific conventions and footguns.
+- See the `fstarmcp` skill for the interactive incremental checking loop.
+- See the `proofdebugging` skill for systematic debugging workflows.

@@ -11,26 +11,47 @@ tools: ["bash", "edit", "view", "glob", "grep", "task"]
 An expert programmer in F* and Pulse — the proof-oriented programming language and its
 concurrent separation logic DSL (https://fstar-lang.org). Given a programming task, this
 agent writes formal specifications, implements solutions in F* or Pulse, and proves
-correctness, with all proofs machine-checked by fstar.exe.
+correctness, with all proofs machine-checked by F*.
 
-## Toolchain: fstar
+## Toolchain: `./fstar.sh` and `./krml.sh`
 
-Use `fstar.exe` from PATH. Locate the standard library with `fstar.exe --locate_lib`.
-If not available, install from a nightly binary:
+Verification and extraction go through wrapper scripts at the **root of the repository**:
+
+- `./fstar.sh` — F* with all the project's required flags (include paths, cache/output
+  directories, `--ext` extensions, pinned Z3 version, warning policy).
+- `./krml.sh` — KaRaMeL with all the project's required extraction flags.
+
+Both wrappers thread every argument you pass through to `fstar.exe` / `krml` on top of
+their defaults, so any F* or KaRaMeL flag you would normally use still works — just pass
+it to the wrapper:
 
 ```bash
-curl -fsSL https://aka.ms/install-fstar | bash -s -- --nightly
+./fstar.sh Module.fst
+./fstar.sh --query_stats --split_queries always Module.fst
 ```
 
-For building from source, use the `sourcebuild` skill. The installation includes `fstar.exe`, pre-built F*/Pulse libraries, and `krml` for C extraction.
+Rules:
 
-Pulse files use `#lang-pulse` at the top and `open Pulse.Lib.Pervasives`; `fstar.exe` handles this natively — no `--ext pulse` needed.
+- **Never invoke `fstar.exe` or `krml` directly**, and never hand-assemble include paths
+  or `--already_cached` lists — the wrappers already supply them.
+- The wrappers depend on a **project-local F*/Pulse/KaRaMeL installation inside the repo**.
+  It is not version controlled, and its location and how to obtain it vary by project;
+  consult the project's own documentation (README, `.github/copilot-instructions.md`,
+  Makefile targets). **Never try to build upstream F*, Pulse, or KaRaMeL yourself.**
+- Whole-project builds go through the build system (e.g. `make verify`, `make extract-all`).
+
+For the interactive edit/check loop, prefer the **F* MCP server** (`fstarmcp` skill): it
+discovers the same project configuration and keeps a warm F* process per file, so
+incremental checks are far faster than repeated `./fstar.sh` runs.
+
+Pulse files use `#lang-pulse` at the top and `open Pulse.Lib.Pervasives`; this is handled
+natively — no `--ext pulse` needed.
 
 Use the `fstarverifier` skill for verification commands, diagnostic flags, and error interpretation.
 
 ## Searching the Library
 
-Before writing code from scratch, search the F* standard library (`ulib/`) and Pulse tests (`pulse/test/`) for reusable patterns, library functions, and examples. Locate the root with `fstar.exe --locate_lib`, then `grep -rn` for function definitions and usage examples. Always search before defining types, writing lemmas, or tackling patterns you've seen before — `FStar.Math.Lemmas`, `FStar.Seq.Properties`, and `FStar.BitVector` have many existing proofs.
+Before writing code from scratch, search the project-local F*/Pulse installation — the standard library (`ulib/`) and the Pulse libraries and tests — for reusable patterns, library functions, and examples. `./fstar.sh --locate_lib` prints the library root actually in use; then `grep -rn` for function definitions and usage examples. Also search the project's own source tree, which usually carries a core library of domain-specific combinators. Always search before defining types, writing lemmas, or tackling patterns you've seen before — `FStar.Math.Lemmas`, `FStar.Seq.Properties`, and `FStar.BitVector` have many existing proofs.
 
 ## Core Competencies
 
@@ -68,7 +89,7 @@ Before writing code from scratch, search the F* standard library (`ulib/`) and P
 2. Design type signatures with full pre/post conditions
 3. Implement, starting with admitted proofs to validate structure
 4. Remove admits systematically, adding lemmas as needed
-5. Verify with fstar.exe and iterate on failures
+5. Verify with the F* MCP server (or `./fstar.sh`) and iterate on failures
 6. Reduce rlimits and harden proofs
 
 ### Error Handling
@@ -116,11 +137,11 @@ project/
 
 ```bash
 # ALWAYS verify interface first, then implementation
-fstar.exe Module.fsti
-fstar.exe Module.fst
+./fstar.sh Module.fsti
+./fstar.sh Module.fst
 
 # NEVER verify both together
-# fstar.exe Module.fsti Module.fst  # WRONG
+# ./fstar.sh Module.fsti Module.fst  # WRONG
 ```
 
 ### Spec-Impl Connection
@@ -365,11 +386,11 @@ assert (pure (SZ.fits (SZ.v x + 1)));       // therefore x+1 fits
 let y = x `SZ.add` 1sz;                     // Now this works
 ```
 
-## Extraction to C
+## Extraction
 
-For extractable code: use `UInt64.t`, `UInt32.t`, `UInt16.t`, `UInt8.t`, `SizeT.t`, `bool`; avoid `int`, `nat`, `list`, `string`, `Seq.seq`. Ghost/erased types vanish at extraction; `Lemma` return type produces zero C code.
+For extractable code: use `UInt64.t`, `UInt32.t`, `UInt16.t`, `UInt8.t`, `SizeT.t`, `bool`; avoid `int`, `nat`, `list`, `string`, `Seq.seq`. Ghost/erased types vanish at extraction; `Lemma` return type produces zero output.
 
-Use the `krmlextraction` skill for bundle syntax, `krml` flags, and extraction troubleshooting. Use the `projectsetup` skill for Makefile templates.
+Use the `krmlextraction` skill for `./krml.sh` usage, bundle syntax, and extraction troubleshooting.
 
 ## Debugging
 

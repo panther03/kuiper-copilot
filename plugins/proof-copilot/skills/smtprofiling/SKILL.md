@@ -28,7 +28,7 @@ let definition_to_be_debugged ...
 Run F* on the file (with appropriate include paths)
 
 ```bash
-fstar.exe Module.fst
+./fstar.sh Module.fst
 ```
 
 The log messages will show the name of the .smt2 file logged for each proof obligation.
